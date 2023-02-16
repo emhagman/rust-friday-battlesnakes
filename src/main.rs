@@ -6,9 +6,13 @@ use rocket::fairing::AdHoc;
 use rocket::http::Status;
 use rocket::serde::{json::Json, Deserialize};
 use serde::Serialize;
-use serde_json::{Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
+use std::path::Path;
+
+use pathfinding::prelude::bfs;
+use rust_pathfinding::{Board as PathfindingBoard, Pos};
 
 mod logic;
 
@@ -31,7 +35,7 @@ pub struct Board {
     hazards: Vec<Coord>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Battlesnake {
     id: String,
     name: String,
@@ -43,7 +47,7 @@ pub struct Battlesnake {
     shout: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub struct Coord {
     x: u32,
     y: u32,
