@@ -15,6 +15,7 @@ use pathfinding::prelude::bfs;
 use rust_pathfinding::{Board as PathfindingBoard, Pos};
 
 mod logic;
+mod utils;
 
 // API and Response Objects
 // See https://docs.battlesnake.com/api

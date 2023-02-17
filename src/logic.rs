@@ -10,20 +10,31 @@
 // To get you started we've included code to prevent your Battlesnake from moving backwards.
 // For more info see docs.battlesnake.com
 
+use core::panic;
 use log::info;
-use pathfinding::{num_traits::Pow, prelude::bfs};
+use pathfinding::prelude::astar;
 use serde_json::{json, Value};
-use std::{collections::HashMap, path::Path};
 
+use crate::utils;
+use crate::utils::SnakePersonality;
 use crate::{Battlesnake, Board as BattlesnakeBoard, Coord as BattlesnakeCoord, Game};
 use rust_pathfinding::{Board as PathfindingBoard, Pos};
+
+// Logic Loop
+// 1. Choose a personality (Down The Road)
+// 2. Find enemy bodies on the board and "avoid"
+// Sub-logic loop
+//  3a. (Avoid other objects based on personality)
+//  3b. Determine goal (based on personality)
+//  4. ADAPT
+//      - check behavior of other snakes
+//      - ????
 
 // info is called when you create your Battlesnake on play.battlesnake.com
 // and controls your Battlesnake's appearance
 // TIP: If you open your Battlesnake URL in a browser you should see this data
 pub fn info() -> Value {
     info!("INFO");
-
     return json!({
         "apiversion": "1",
         "author": "", // TODO: Your Battlesnake Username
@@ -47,77 +58,24 @@ pub fn end(_game: &Game, _turn: &u32, _board: &BattlesnakeBoard, _you: &Battlesn
 // Valid moves are "up", "down", "left", or "right"
 // See https://docs.battlesnake.com/api/example-move for available data
 pub fn get_move(_game: &Game, turn: &u32, board: &BattlesnakeBoard, you: &Battlesnake) -> Value {
-    let mut is_move_safe: HashMap<_, _> = vec![
-        ("up", true),
-        ("down", true),
-        ("left", true),
-        ("right", true),
-    ]
-    .into_iter()
-    .collect();
-
-    // We've included code to prevent your Battlesnake from moving backwards
     let my_head = &you.body[0]; // Coordinates of your head
-    let my_neck = &you.body[1]; // Coordinates of your "neck"
+    let personality = SnakePersonality::HeadHunter;
 
-    if my_neck.x < my_head.x {
-        // Neck is left of head, don't move left
-        is_move_safe.insert("left", false);
-    } else if my_neck.x > my_head.x {
-        // Neck is right of head, don't move right
-        is_move_safe.insert("right", false);
-    } else if my_neck.y < my_head.y {
-        // Neck is below head, don't move down
-        is_move_safe.insert("down", false);
-    } else if my_neck.y > my_head.y {
-        // Neck is above head, don't move up
-        is_move_safe.insert("up", false);
-    }
+    // main logic
 
-    // TODO: Step 1 - Prevent your Battlesnake from moving out of bounds
-    // let board_width = &board.width;
-    // let board_height = &board.height;
+    // 2. avoid directly hitting snakes
+    let pathfinding_board = utils::build_pathfinding_board_with_hazards(&personality, board, &you);
 
-    // TODO: Step 2 - Prevent your Battlesnake from colliding with itself
-    let my_body = &you.body;
+    // 3. determine goal
+    let result = determine_goal(&personality, &pathfinding_board, board, my_head);
+    let moves = if let Some(moves) = result {
+        moves
+    } else {
+        panic!("No moves to make!");
+    };
 
-    // TODO: Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
-    // let opponents = &board.snakes;
-
-    // Are there any safe moves left?
-    let safe_moves = is_move_safe
-        .into_iter()
-        .filter(|&(_, v)| v)
-        .map(|(k, _)| k)
-        .collect::<Vec<_>>();
-
-    println!("{:?}", safe_moves);
-    let self_pos = coord_to_pos(board, &my_body[0]);
-    let goal_pos = coord_to_pos(board, find_delicious_food(board, my_head));
-    let pathfinding_board = convert_position_to_pathfinding_board(board, &you);
-    let result = bfs(
-        &self_pos,
-        |p| {
-            pathfinding_board
-                .get_successors(p)
-                .iter()
-                .map(|successor| successor.pos)
-                .collect::<Vec<_>>()
-        },
-        |p| *p == goal_pos,
-    );
-    let result = result.expect("No path found");
-    // pathfinding_board.draw_to_image(Path::new(&format!("moves/bfs-{}.png", turn)), Some(&result));
-    println!("Current Pathfinder Path: {:?}", result);
-    let next_move = result.get(1).expect("No more moves to make");
-    let converted_next_move = pos_to_coord(board, next_move);
-    println!("Next Pathfinder Move: {:?}", next_move);
-    println!("Next Battlesnake Move: {:?}", converted_next_move);
-    let chosen = get_next_move_from_coord(&my_body[0], &converted_next_move);
-
-    // TODO: Step 4 - Move towards food instead of random, to regain health and survive longer
-    // let food = &board.food;
-
+    // 5. MOVE THERE!
+    let chosen = determine_next_move(&moves, board, my_head);
     info!("MOVE {}: {}", turn, chosen);
     return json!({ "move": chosen });
 }
@@ -131,6 +89,82 @@ fn coord_distance(a: &BattlesnakeCoord, b: &BattlesnakeCoord) -> f64 {
     f64::sqrt((b0 - a0).pow(2) as f64 + (b1 - a1).pow(2) as f64)
 }
 
+fn determine_goal(
+    personality: &SnakePersonality,
+    pathfinding_board: &PathfindingBoard,
+    board: &BattlesnakeBoard,
+    head: &BattlesnakeCoord,
+) -> Option<(Vec<Pos>, u32)> {
+    let self_pos = utils::coord_to_pos(board, head);
+    let goal_pos = match personality {
+        &SnakePersonality::Snacky => utils::coord_to_pos(board, find_delicious_food(board, head)),
+        &SnakePersonality::HeadHunter => {
+            utils::coord_to_pos(board, find_delicious_snake(board, head))
+        }
+        a => panic!("That personality isn't implemented yet: {:?}", a),
+    };
+    return astar(
+        &self_pos,
+        |p| {
+            pathfinding_board
+                .get_successors(p)
+                .iter()
+                .map(|s| (s.pos, s.cost))
+                .collect::<Vec<_>>()
+        },
+        |p| ((p.0 - goal_pos.0).abs() + (p.1 - goal_pos.1).abs()) as u32,
+        |p| *p == goal_pos,
+    );
+}
+
+fn determine_next_move(
+    moves: &(Vec<Pos>, u32),
+    board: &BattlesnakeBoard,
+    head: &BattlesnakeCoord,
+) -> &'static str {
+    println!("Current Pathfinder Path: {:?}", moves);
+    let next_move = moves.0.get(1).expect("No more moves to make");
+    let converted_next_move = utils::pos_to_coord(board, next_move);
+    println!("Next Pathfinder Move: {:?}", next_move);
+    println!("Next Battlesnake Move: {:?}", converted_next_move);
+    utils::get_next_move_from_coord(head, &converted_next_move)
+}
+
+fn find_delicious_snake<'a>(
+    board: &'a BattlesnakeBoard,
+    head: &BattlesnakeCoord,
+) -> &'a BattlesnakeCoord {
+    let mut distances = Vec::new();
+    let other_snakes = &board.snakes[1..];
+    for s in other_snakes {
+        let d = coord_distance(head, &s.head);
+        let mut smallest_snake_size = 999;
+        for s in other_snakes {
+            let osd = s.body.len();
+            if osd < smallest_snake_size {
+                smallest_snake_size = osd;
+            }
+        }
+        distances.push((d, smallest_snake_size));
+    }
+    println!("{:?}", distances);
+    let min = distances
+        .iter()
+        .filter(|f| f.0 != 0.0)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    println!("{:?}", min);
+    let min_clone = min.clone();
+    let idx = distances
+        .iter()
+        .position(|d| d == &min_clone)
+        .expect("cant find snake");
+    println!("snake idx {}", idx);
+    let snake = &other_snakes.get(idx).unwrap();
+    println!("{:?}", snake);
+    &snake.head
+}
+
 fn find_delicious_food<'a>(
     board: &'a BattlesnakeBoard,
     head: &BattlesnakeCoord,
@@ -138,12 +172,9 @@ fn find_delicious_food<'a>(
     if board.snakes.len() == 1 {
         let mut distances = Vec::new();
         for f in &board.food {
-            println!("{:?}", f);
             let d = coord_distance(head, f);
             distances.push(d);
         }
-        println!("{:?}", distances);
-        println!("{:?}", board.food);
         let min = distances
             .iter()
             .min_by(|a, b| a.partial_cmp(b).unwrap())
@@ -154,164 +185,31 @@ fn find_delicious_food<'a>(
             .position(|d| d == &min_clone)
             .expect("cant find food");
         return board.food.get(idx).unwrap();
-    }
-    board.food.get(0).expect("No food to eat")
-}
-
-fn get_next_move_from_coord(me: &BattlesnakeCoord, next: &BattlesnakeCoord) -> &'static str {
-    if me.y == next.y {
-        if me.x as i32 - next.x as i32 == -1 {
-            return "right";
-        }
-        return "left";
     } else {
-        if me.y as i32 - next.y as i32 == -1 {
-            return "up";
-        }
-        return "down";
-    }
-}
-
-fn convert_position_to_pathfinding_board(
-    board: &BattlesnakeBoard,
-    me: &Battlesnake,
-) -> PathfindingBoard {
-    let mut string_board: Vec<String> = Vec::new();
-    let me_vec = vec![me];
-    let all_snakes = me_vec;
-    println!("{} snakes", all_snakes.len());
-    println!("{:?}", all_snakes.get(0));
-    let snake = all_snakes.get(0).unwrap();
-    for row in 0..board.height {
-        let mut row_string = "".to_string();
-        for col in 0..board.width {
-            let mut found_body = false;
-
-            for b in &snake.body {
-                let converted = coord_to_pos(board, b);
-                let x = converted.0 as u32;
-                let y = converted.1 as u32;
-                if row == y && col == x {
-                    row_string += "X";
-                    found_body = true;
+        let mut distances = Vec::new();
+        let other_snakes = &board.snakes[1..];
+        for f in &board.food {
+            let d = coord_distance(head, f);
+            let mut closest_other_snake = 999.0;
+            for s in other_snakes {
+                let osd = coord_distance(&s.head, f);
+                if osd < closest_other_snake {
+                    closest_other_snake = osd;
                 }
             }
-
-            if !found_body {
-                row_string += "1";
-            }
+            distances.push((d, closest_other_snake));
         }
-        string_board.push(row_string);
-    }
-    for r in &string_board {
-        println!("{}", r);
-    }
-    PathfindingBoard::new(string_board, false)
-}
-
-fn coord_to_pos(board: &BattlesnakeBoard, c: &BattlesnakeCoord) -> Pos {
-    let (col, row) = (c.x, board.height - 1 - c.y);
-    Pos(col as i16, row as i16)
-}
-
-fn pos_to_coord(board: &BattlesnakeBoard, c: &Pos) -> BattlesnakeCoord {
-    let (col, row) = (c.0 as u32, board.height - 1 - c.1 as u32);
-    BattlesnakeCoord { x: col, y: row }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use rust_pathfinding::Pos as PathfindingPos;
-
-    use crate::{
-        logic::{coord_to_pos, pos_to_coord},
-        Board as BattlesnakeBoard, Coord as BattlesnakeCoord,
-    };
-
-    #[test]
-    fn battlesnake_to_pathfinding() {
-        let board = BattlesnakeBoard {
-            width: 11,
-            height: 11,
-            food: Vec::new(),
-            hazards: Vec::new(),
-            snakes: Vec::new(),
-        };
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 0, y: 0 }),
-            PathfindingPos(0, 10)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 9, y: 0 }),
-            PathfindingPos(9, 10)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 9, y: 9 }),
-            PathfindingPos(9, 1)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 0, y: 9 }),
-            PathfindingPos(0, 1)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 4, y: 4 }),
-            PathfindingPos(4, 6)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 3, y: 7 }),
-            PathfindingPos(3, 3)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 3, y: 0 }),
-            PathfindingPos(3, 10)
-        );
-        assert_eq!(
-            coord_to_pos(&board, &BattlesnakeCoord { x: 0, y: 7 }),
-            PathfindingPos(0, 3)
-        );
-    }
-
-    #[test]
-    fn pathfinding_to_battlesnake() {
-        let board = BattlesnakeBoard {
-            width: 11,
-            height: 11,
-            food: Vec::new(),
-            hazards: Vec::new(),
-            snakes: Vec::new(),
-        };
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(0, 10)),
-            BattlesnakeCoord { x: 0, y: 0 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(9, 10)),
-            BattlesnakeCoord { x: 9, y: 0 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(9, 1)),
-            BattlesnakeCoord { x: 9, y: 9 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(0, 1)),
-            BattlesnakeCoord { x: 0, y: 9 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(4, 6)),
-            BattlesnakeCoord { x: 4, y: 4 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(3, 3)),
-            BattlesnakeCoord { x: 3, y: 7 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(3, 10)),
-            BattlesnakeCoord { x: 3, y: 0 }
-        );
-        assert_eq!(
-            pos_to_coord(&board, &PathfindingPos(0, 3)),
-            BattlesnakeCoord { x: 0, y: 7 }
-        );
+        println!("{:?}", distances);
+        let min = distances
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        println!("{:?}", min);
+        let min_clone = min.clone();
+        let idx = distances
+            .iter()
+            .position(|d| d == &min_clone)
+            .expect("cant find food");
+        return board.food.get(idx).unwrap();
     }
 }
