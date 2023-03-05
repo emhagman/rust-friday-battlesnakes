@@ -9,10 +9,6 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
-use std::path::Path;
-
-use pathfinding::prelude::bfs;
-use rust_pathfinding::{Board as PathfindingBoard, Pos};
 
 mod logic;
 mod utils;
@@ -48,7 +44,7 @@ pub struct Battlesnake {
     shout: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Default)]
 pub struct Coord {
     x: u32,
     y: u32,
@@ -120,7 +116,7 @@ fn rocket() -> _ {
     rocket::build()
         .attach(AdHoc::on_response("Server ID Middleware", |_, res| {
             Box::pin(async move {
-                res.set_raw_header("Server", "battlesnake/github/starter-snake-rust");
+                res.set_raw_header("Server", "battlesnake/rust-friday-battlesnakes");
             })
         }))
         .mount(

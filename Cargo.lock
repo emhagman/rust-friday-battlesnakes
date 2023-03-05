@@ -1677,6 +1677,7 @@ name = "starter-snake-rust"
 version = "1.0.0"
 dependencies = [
  "env_logger",
+ "itertools",
  "log",
  "pathfinding",
  "rand 0.8.4",
