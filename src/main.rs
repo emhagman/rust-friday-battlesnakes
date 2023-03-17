@@ -1,17 +1,28 @@
 #[macro_use]
 extern crate rocket;
 
+#[macro_use]
+extern crate lazy_static;
+
 use log::info;
 use rocket::fairing::AdHoc;
 use rocket::http::Status;
 use rocket::serde::{json::Json, Deserialize};
+use rurel::AgentTrainer;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
+use std::sync::{Arc, Mutex};
 
+mod learning;
 mod logic;
 mod utils;
+
+lazy_static! {
+    static ref AGENT_TRAINER: Arc<Mutex<AgentTrainer<learning::MyState>>> =
+        Arc::new(Mutex::from(AgentTrainer::new()));
+}
 
 // API and Response Objects
 // See https://docs.battlesnake.com/api
@@ -96,6 +107,12 @@ fn handle_end(end_req: Json<GameState>) -> Status {
 
 #[launch]
 fn rocket() -> _ {
+    let trainer = Arc::clone(&AGENT_TRAINER);
+    let trainer_lock = trainer.lock();
+    let mut trainer_obj = trainer_lock.unwrap();
+    learning::train(&mut trainer_obj);
+    drop(trainer_obj);
+
     // Lots of web hosting services expect you to bind to the port specified by the `PORT`
     // environment variable. However, Rocket looks at the `ROCKET_PORT` environment variable.
     // If we find a value for `PORT`, we set `ROCKET_PORT` to that value.

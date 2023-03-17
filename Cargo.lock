@@ -1458,6 +1458,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rurel"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d991d4b0eb75646eb37fec5a76ed7b652434b4ea2ef069013fc91598cf221e88"
+dependencies = [
+ "rand 0.8.4",
+]
+
+[[package]]
 name = "rust-pathfinding"
 version = "0.1.0"
 dependencies = [
@@ -1678,10 +1687,12 @@ version = "1.0.0"
 dependencies = [
  "env_logger",
  "itertools",
+ "lazy_static",
  "log",
  "pathfinding",
  "rand 0.8.4",
  "rocket",
+ "rurel",
  "rust-pathfinding",
  "serde",
  "serde_json",

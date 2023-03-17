@@ -23,3 +23,5 @@ rand = "0.8.4"
 rust-pathfinding = {path = "./vendor/rust-pathfinding"}
 pathfinding = "3.0.12"
 itertools = "0.10.5"
+rurel = "0.4.0"
+lazy_static = "1.4.0"

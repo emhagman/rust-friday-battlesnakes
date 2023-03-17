@@ -15,8 +15,11 @@ mod goal;
 use core::panic;
 use log::info;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
+use crate::learning::MyState;
 use crate::utils::{self};
+use crate::AGENT_TRAINER;
 use crate::{Battlesnake, Board as BattlesnakeBoard, Coord as BattlesnakeCoord, Game};
 use rust_pathfinding::PathfindingPos;
 
@@ -61,6 +64,14 @@ pub fn info() -> Value {
 // start is called when your Battlesnake begins a game
 pub fn start(_game: &Game, _turn: &u32, _board: &BattlesnakeBoard, _you: &Battlesnake) {
     info!("GAME START");
+    let trainer = Arc::clone(&AGENT_TRAINER);
+    let trainer_lock = trainer.lock().unwrap();
+    let action = trainer_lock.best_action(&MyState {
+        x: 0,
+        y: 0,
+        goal: (5, 5),
+    });
+    info!("BEST ACTION {:?}", action);
 }
 
 // end is called when your Battlesnake finishes a game
